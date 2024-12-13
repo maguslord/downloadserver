@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const winston = require('winston');
 
+const mime = require('mime-types');
+
 const app = express();
 const port = 3000;
 
@@ -197,6 +199,119 @@ app.post('/download', validateInput, (req, res) => {
         }
     });
 });
+
+
+
+
+
+
+//////////////////
+
+
+// Endpoint to list downloaded files with more details
+app.get('/downloads', (req, res) => {
+  const downloadsPath = path.join(__dirname, 'downloads');
+  
+  try {
+      const files = fs.readdirSync(downloadsPath)
+          .filter(file => {
+              const stats = fs.statSync(path.join(downloadsPath, file));
+              return stats.isFile(); // Only return files, not directories
+          })
+          .map(file => {
+              const filePath = path.join(downloadsPath, file);
+              const stats = fs.statSync(filePath);
+              return {
+                  filename: file,
+                  size: stats.size,
+                  lastModified: stats.mtime,
+                  mimetype: mime.lookup(filePath) || 'application/octet-stream'
+              };
+          });
+      
+      res.json({ files });
+  } catch (error) {
+      logger.error(`Error listing downloads: ${error}`);
+      res.status(500).json({ 
+          error: 'Failed to list downloads',
+          details: error.message 
+      });
+  }
+});
+
+// Endpoint to download a specific file
+app.get('/download/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(__dirname, 'downloads', filename);
+  
+  // Validate filename to prevent directory traversal attacks
+  if (path.dirname(filePath) !== path.join(__dirname, 'downloads')) {
+      return res.status(403).json({ error: 'Invalid file path' });
+  }
+  
+  // Check if file exists
+  if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+  }
+  
+  // Determine MIME type
+  const mimetype = mime.lookup(filePath) || 'application/octet-stream';
+  
+  // Set headers for file download
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Type', mimetype);
+  
+  // Create file stream and send
+  const fileStream = fs.createReadStream(filePath);
+  
+  fileStream.on('error', (error) => {
+      logger.error(`File download error: ${error}`);
+      res.status(500).json({ 
+          error: 'Failed to download file',
+          details: error.message 
+      });
+  });
+  
+  fileStream.pipe(res);
+});
+
+// Endpoint to delete a file from the server
+app.delete('/downloads/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(__dirname, 'downloads', filename);
+  
+  // Validate filename to prevent directory traversal attacks
+  if (path.dirname(filePath) !== path.join(__dirname, 'downloads')) {
+      return res.status(403).json({ error: 'Invalid file path' });
+  }
+  
+  try {
+      // Check if file exists before attempting to delete
+      if (!fs.existsSync(filePath)) {
+          return res.status(404).json({ error: 'File not found' });
+      }
+      
+      // Delete the file
+      fs.unlinkSync(filePath);
+      
+      logger.info(`File deleted: ${filename}`);
+      res.json({ 
+          message: 'File deleted successfully',
+          filename: filename 
+      });
+  } catch (error) {
+      logger.error(`File deletion error: ${error}`);
+      res.status(500).json({ 
+          error: 'Failed to delete file',
+          details: error.message 
+      });
+  }
+});
+
+
+
+
+//////////////////
 
 // Global error handler
 app.use((err, req, res, next) => {
