@@ -9,12 +9,24 @@ const app = express();
 const PORT = 3000;
 
 // Middleware to handle CORS and request bodies
-app.use(cors());
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cors({
+  origin: '*', // Be more specific in production
+  methods: ['POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// Logging middleware
+app.use((req, res, next) => {
+  console.log(`Received ${req.method} request to ${req.path}`);
+  next();
+});
 
 // POST endpoint to download video/audio
 app.post("/download", async (req, res) => {
+  console.log('Download request body:', req.body);
+  
   const { url } = req.body;
 
   // Validate the URL
@@ -73,7 +85,10 @@ app.post("/download", async (req, res) => {
   }
 });
 
+// Add an OPTIONS handler for CORS preflight requests
+app.options("/download", cors());
+
 // Start the server
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running at http://0.0.0.0:${PORT}`);
 });
