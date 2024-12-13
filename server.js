@@ -7,30 +7,41 @@ const bodyParser = require("body-parser");
 
 const app = express();
 const PORT = 3000;
+const HOST = '0.0.0.0'; // Listen on all network interfaces
 
-// Middleware to handle CORS and request bodies
+// Comprehensive CORS configuration
 app.use(cors({
-  origin: '*', // Be more specific in production
-  methods: ['POST', 'OPTIONS'],
+  origin: '*', // Be careful with this in production
+  methods: ['POST', 'GET', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Logging middleware
+// Detailed logging middleware
 app.use((req, res, next) => {
   console.log(`Received ${req.method} request to ${req.path}`);
+  console.log('Headers:', req.headers);
+  console.log('Body:', req.body);
   next();
+});
+
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.status(200).send('Server is running');
 });
 
 // POST endpoint to download video/audio
 app.post("/download", async (req, res) => {
-  console.log('Download request body:', req.body);
+  console.log('Download request received');
+  console.log('Request body:', req.body);
   
   const { url } = req.body;
 
   // Validate the URL
   if (!url || !ytdl.validateURL(url)) {
+    console.error('Invalid URL:', url);
     return res.status(400).send("Invalid URL provided.");
   }
 
@@ -89,6 +100,6 @@ app.post("/download", async (req, res) => {
 app.options("/download", cors());
 
 // Start the server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running at http://0.0.0.0:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Server running at http://${HOST}:${PORT}`);
 });
