@@ -1,11 +1,23 @@
 import os
 import logging
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file 
 import yt_dlp
 import tempfile
 import uuid
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
+from flask import request
+import time
+
+@app.before_request
+def log_request_info():
+    request.start_time = time.time()
+
+@app.after_request
+def log_response_info(response):
+    duration = time.time() - request.start_time
+    app.logger.info(f"Request to {request.path} took {duration:.2f} seconds")
+    return response
 
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
