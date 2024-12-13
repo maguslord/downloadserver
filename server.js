@@ -41,15 +41,6 @@ const validateInput = (req, res, next) => {
     });
   }
 
-  // Basic URL validation
-  const urlPattern = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com)\/.+/;
-  if (!urlPattern.test(url)) {
-    return res.status(400).json({ 
-      error: 'Invalid URL',
-      details: 'Supported platforms: YouTube, Vimeo, Dailymotion'
-    });
-  }
-
   next();
 };
 
@@ -67,8 +58,16 @@ app.post('/formats', validateInput, (req, res) => {
     
     logger.info(`Fetching formats for URL: ${url}`);
     
-    // Use spawn instead of exec for better error handling
-    const process = spawn('yt-dlp', [url, '--list-formats', '--dump-json']);
+    // Updated yt-dlp command with additional parameters to bypass bot protection
+    const process = spawn('yt-dlp', [
+        url, 
+        '--list-formats', 
+        '--dump-json',
+        '--no-warnings',
+        '--age-limit', '99',
+        '--cookies-from-browser', 'chrome',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    ]);
     
     let formatsData = '';
     let errorData = '';
@@ -148,7 +147,15 @@ app.post('/download', validateInput, (req, res) => {
     ensureDownloadsDir();
     
     const outputPath = path.join(__dirname, 'downloads', '%(title)s.%(ext)s');
-    const process = spawn('yt-dlp', [url, '-f', format, '-o', outputPath]);
+    const process = spawn('yt-dlp', [
+        url, 
+        '-f', format, 
+        '-o', outputPath,
+        '--no-warnings',
+        '--age-limit', '99',
+        '--cookies-from-browser', 'chrome',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    ]);
     
     let outputData = '';
     let errorData = '';
