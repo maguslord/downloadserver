@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import yt_dlp
 import os
 import uuid
+import tempfile
 
 app = Flask(__name__)
 
@@ -15,58 +16,61 @@ def process_video():
         if not video_url:
             return jsonify({'error': 'No video URL provided'}), 400
 
-        # Configure youtube-dl options
+        # Temporary directory for video processing
+        temp_download_dir = tempfile.mkdtemp(prefix='video_process_')
+
+        # Configure youtube-dl options for minimal processing
         ydl_opts = {
             'format': f'bestvideo[ext={desired_format}]+bestaudio/best[ext={desired_format}]',
-            'outtmpl': f'/downloads/{uuid.uuid4()}%(ext)s',
             'nooverwrites': True,
             'no_warnings': True,
             'ignoreerrors': False,
             'noplaylist': True,
-            'progress_hooks': [progress_hook],
+            'skip_download': True,  # Only extract information
         }
 
         # Extract video information
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(video_url, download=True)
+            info_dict = ydl.extract_info(video_url, download=False)
             
-            # Get the actual downloaded file
-            downloaded_file = ydl.prepare_filename(info_dict)
-            
-            # Generate a unique download URL 
-            download_url = f'/download/{os.path.basename(downloaded_file)}'
-            
+            # Prepare video metadata for client-side download
             return jsonify({
-                'fileName': os.path.basename(downloaded_file),
-                'downloadUrl': download_url,
                 'videoInfo': {
                     'title': info_dict.get('title', 'Unknown Title'),
                     'duration': info_dict.get('duration', 0),
+                    'formats': [
+                        {
+                            'format_id': fmt.get('format_id'),
+                            'ext': fmt.get('ext'),
+                            'resolution': fmt.get('resolution', 'N/A'),
+                            'filesize': fmt.get('filesize', 0),
+                            'url': fmt.get('url')
+                        } 
+                        for fmt in info_dict.get('formats', [])
+                        if fmt.get('url')
+                    ]
                 }
             })
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def progress_hook(d):
-    if d['status'] == 'finished':
-        print('Video download complete.')
-
-@app.route('/download/<filename>', methods=['GET'])
-def download_file(filename):
+@app.route('/confirm-download', methods=['POST'])
+def confirm_download():
     try:
-        file_path = os.path.join('/downloads', filename)
+        # Receive confirmation from client after successful download
+        downloaded_url = request.json.get('downloadedUrl')
         
-        if not os.path.exists(file_path):
-            return jsonify({'error': 'File not found'}), 404
+        if not downloaded_url:
+            return jsonify({'status': 'error', 'message': 'No URL provided'}), 400
         
-        # In a real-world scenario, you'd use a more secure method to serve files
-        return send_file(file_path, as_attachment=True)
+        # Log download confirmation (optional)
+        print(f"Video downloaded: {downloaded_url}")
+        
+        return jsonify({'status': 'success', 'message': 'Download confirmed'})
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Ensure download directory exists
-    os.makedirs('/downloads', exist_ok=True)
-    app.run(host='0.0.0.0', port=5000, ssl_context='adhoc')
+    app.run(host='0.0.0.0', port=5000)
