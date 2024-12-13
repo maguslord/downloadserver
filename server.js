@@ -58,15 +58,20 @@ app.post('/formats', validateInput, (req, res) => {
     
     logger.info(`Fetching formats for URL: ${url}`);
     
-    // Updated yt-dlp command with additional parameters to bypass bot protection
+    // Updated yt-dlp command with alternative authentication bypass methods
     const process = spawn('yt-dlp', [
         url, 
         '--list-formats', 
         '--dump-json',
         '--no-warnings',
         '--age-limit', '99',
-        '--cookies-from-browser', 'chrome',
-        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        '--ignore-config',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        // Additional parameters to bypass restrictions
+        '--extractor-retries', '3',
+        '--fragment-retries', '3',
+        '--no-part',
+        '--no-mtime'
     ]);
     
     let formatsData = '';
@@ -153,8 +158,13 @@ app.post('/download', validateInput, (req, res) => {
         '-o', outputPath,
         '--no-warnings',
         '--age-limit', '99',
-        '--cookies-from-browser', 'chrome',
-        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        '--ignore-config',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        // Additional parameters to improve download reliability
+        '--extractor-retries', '3',
+        '--fragment-retries', '3',
+        '--no-part',
+        '--no-mtime'
     ]);
     
     let outputData = '';
