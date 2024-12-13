@@ -41,66 +41,54 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
 
 // Download endpoint
 app.post("/download", (req, res) => {
-  const { url, format = 'best' } = req.body;
+  const { url } = req.body;
 
-  // Validate URL
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
   }
 
-  // Generate a unique filename
   const timestamp = Date.now();
   const outputTemplate = path.join(DOWNLOAD_DIR, `%(title)s-${timestamp}.%(ext)s`);
+  const cookiesPath = path.join(__dirname, 'cookies.txt');
 
-  // Prepare yt-dlp arguments
+  if (!fs.existsSync(cookiesPath)) {
+    return res.status(500).json({ error: 'Cookies file is missing. Please provide cookies.txt for authentication.' });
+  }
+
   const args = [
     url,
-    '-f', format, // Select best quality by default
     '-o', outputTemplate,
-    '--no-playlist', // Download only specified video
-    '--print', 'filename' // Print output filename
+    '--no-playlist',
+    '--cookies', cookiesPath,
+    '--print', 'filename'
   ];
 
-  // Spawn yt-dlp process
   const ytDlp = spawn('yt-dlp', args);
-
   let outputFilename = '';
   let errorOutput = '';
 
-  // Capture output filename
   ytDlp.stdout.on('data', (data) => {
     outputFilename += data.toString().trim();
   });
 
-  // Capture error output
   ytDlp.stderr.on('data', (data) => {
     errorOutput += data.toString();
     console.error('yt-dlp error:', data.toString());
   });
 
-  // Handle process completion
   ytDlp.on('close', (code) => {
     if (code !== 0) {
-      console.error('Download failed:', errorOutput);
-      return res.status(500).json({ 
-        error: 'Download failed', 
-        details: errorOutput 
-      });
+      return res.status(500).json({ error: 'Download failed', details: errorOutput });
     }
 
-    // Verify file exists
     if (!fs.existsSync(outputFilename)) {
       return res.status(500).json({ error: 'File not found after download' });
     }
 
-    // Send file
     res.download(outputFilename, path.basename(outputFilename), (err) => {
       if (err) {
-        console.error('File send error:', err);
         res.status(500).json({ error: 'Failed to send file' });
       }
-
-      // Optional: Delete file after sending
       try {
         fs.unlinkSync(outputFilename);
       } catch (deleteErr) {
@@ -109,15 +97,11 @@ app.post("/download", (req, res) => {
     });
   });
 
-  // Handle spawn errors
   ytDlp.on('error', (err) => {
-    console.error('Spawn error:', err);
-    res.status(500).json({ 
-      error: 'Failed to start download process', 
-      details: err.message 
-    });
+    res.status(500).json({ error: 'Failed to start download process', details: err.message });
   });
 });
+
 
 // Health check endpoint
 app.get('/', (req, res) => {
