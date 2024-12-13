@@ -1,57 +1,66 @@
 const express = require('express');
-const fs = require('fs');
-const ytDlp = require('yt-dlp');
-const app = express();
 const cors = require('cors');
-const path = require('path');
+const { exec } = require('child_process');
 
-// Middlewares
-app.use(express.json());
+const app = express();
+const port = 3000;
+
 app.use(cors());
-
-// Utility function to get formats
-const getFormats = async (url) => {
-    try {
-        // Use yt-dlp to get available formats for the video
-        const output = await ytDlp.getInfo(url, {
-            cookies: './cookies.txt', // Use the cookies for authentication
-        });
-        return output.formats; // Return the list of available formats
-    } catch (error) {
-        throw new Error('Error fetching formats: ' + error.message);
-    }
-};
+app.use(express.json());
 
 // Endpoint to get available formats
-app.post('/formats', async (req, res) => {
-    const { url } = req.body;
-    try {
-        const formats = await getFormats(url);
-        res.json({ formats });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+app.post('/get-formats', (req, res) => {
+    const url = req.body.url;
+
+    // Run yt-dlp with the --list-formats option
+    exec(`yt-dlp ${url} --list-formats`, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`exec error: ${error}`);
+            return res.status(500).send({ error: 'Error fetching formats' });
+        }
+        if (stderr) {
+            console.error(`stderr: ${stderr}`);
+            return res.status(500).send({ error: 'Error fetching formats' });
+        }
+
+        // Parse the available formats
+        const formats = stdout.split('\n').map(line => {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length < 6) return null; // Skip lines that don't have valid format data
+            return {
+                id: parts[0],
+                ext: parts[1],
+                resolution: parts[2],
+                fps: parts[3],
+                size: parts[4],
+                codec: parts[5]
+            };
+        }).filter(format => format !== null);
+
+        res.send({ formats });
+    });
 });
 
-// Endpoint to download video (if needed for later)
-app.post('/download', async (req, res) => {
-    const { url, format } = req.body;
-    try {
-        // Download logic here
-        const downloadPath = path.join(__dirname, 'downloads', '%(title)s.%(ext)s');
-        await ytDlp.download(url, {
-            format: format,
-            cookies: './cookies.txt',
-            output: downloadPath,
-        });
-        res.json({ message: 'Download started' });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
+// Endpoint to download the video
+app.post('/download', (req, res) => {
+    const url = req.body.url;
+    const format = req.body.format;
+
+    // Run yt-dlp to download the selected format
+    exec(`yt-dlp ${url} -f ${format} -o '~/downloads/%(title)s.%(ext)s'`, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`exec error: ${error}`);
+            return res.status(500).send({ error: 'Error downloading the video' });
+        }
+        if (stderr) {
+            console.error(`stderr: ${stderr}`);
+            return res.status(500).send({ error: 'Error downloading the video' });
+        }
+
+        res.send({ message: 'Download started successfully', output: stdout });
+    });
 });
 
-// Start the server
-const port = 3000;
 app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+    console.log(`Server is running at http://0.0.0.0:${port}`);
 });
