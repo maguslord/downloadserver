@@ -19,7 +19,6 @@ const logger = winston.createLogger({
     winston.format.json()
   ),
   transports: [
-    // Write all logs to file
     new winston.transports.File({ 
       filename: path.join(__dirname, 'logs', 'error.log'), 
       level: 'error' 
@@ -27,7 +26,6 @@ const logger = winston.createLogger({
     new winston.transports.File({ 
       filename: path.join(__dirname, 'logs', 'combined.log') 
     }),
-    // Also log to console for development
     new winston.transports.Console({
       format: winston.format.simple()
     })
@@ -62,39 +60,31 @@ class VideoDownloadManager {
     return path.join(this.tempDir, filename);
   }
 
-  async validateUrl(url) {
-    // Comprehensive URL validation
-    const urlRegex = /^(https?:\/\/)?([a-zA-Z0-9.-]+)(:[0-9]+)?(\/[a-zA-Z0-9\-_.~!$&'()*+,;=:@%]*)*(\?[a-zA-Z0-9\-_.~!$&'()*+,;=:@%]*)?(\#[a-zA-Z0-9\-_.~!$&'()*+,;=:@%]*)?$/;
-
+  validateUrl(url) {
+    // More comprehensive URL validation
+    const urlRegex = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|vimeo\.com\/|dailymotion\.com\/video\/|instagram\.com\/p\/|twitter\.com\/.*\/status\/|facebook\.com\/.*\/videos\/)[a-zA-Z0-9_-]+/;
 
     if (!urlRegex.test(url)) {
-      throw new VideoDownloaderError('Invalid URL format', 400);
-    }
-
-    try {
-      // Optional: Head request to verify URL accessibility
-      await axios.head(url, { 
-        timeout: 5000,
-        validateStatus: (status) => status >= 200 && status < 300 
-      });
-    } catch (error) {
-      logger.warn('URL accessibility check failed', { url, error: error.message });
-      throw new VideoDownloaderError('URL is not accessible', 400);
+      throw new VideoDownloaderError('Invalid video URL format', 400);
     }
   }
 
   async downloadVideo(url) {
-    await this.validateUrl(url);
+    this.validateUrl(url);
 
     const outputPath = this.generateTempFilePath();
 
     return new Promise((resolve, reject) => {
+      // Updated yt-dlp command with more comprehensive options
       const ytDlp = spawn('yt-dlp', [
         '--no-playlist',  // Prevent downloading playlists
         '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        '--max-filesize', '500M',  // Prevent extremely large downloads
+        '--max-filesize', '1G',  // Increase max file size
         '--abort-on-error',
-        '--cookies', './cookies.txt',  // Use the cookies file in the same directory
+        '--ignore-errors',  // Continue even if some streams fail
+        '--add-header', 'Referer:https://www.youtube.com/',  // Add referrer
+        '--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        '--cookies', './youtube-cookies.txt',  // Use YouTube-specific cookies
         '-o', outputPath,
         url
       ], { 
@@ -112,7 +102,14 @@ class VideoDownloadManager {
         const stdout = Buffer.concat(stdoutChunks).toString();
         const stderr = Buffer.concat(stderrChunks).toString();
 
-        if (code !== 0) {
+        // Check if file was actually created
+        let fileExists = false;
+        try {
+          await fs.access(outputPath);
+          fileExists = true;
+        } catch {}
+
+        if (code !== 0 || !fileExists) {
           logger.error('Video download failed', { 
             url, 
             exitCode: code, 
@@ -153,7 +150,7 @@ class Server {
   setupMiddleware() {
     // CORS Configuration
     this.app.use(cors({
-      origin: ['http://localhost:3000', 'http://localhost:8080'],
+      origin: ['http://localhost:3000', 'http://localhost:8080', '*'],  // Added wildcard for testing
       methods: ['POST'],
       allowedHeaders: ['Content-Type', 'Authorization']
     }));
