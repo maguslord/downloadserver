@@ -43,6 +43,7 @@ class VideoDownloaderError extends Error {
 class VideoDownloadManager {
   constructor() {
     this.tempDir = path.join(os.tmpdir(), 'video-downloader');
+    this.cookiesPath = path.join(__dirname, 'youtube-cookies.txt');
     this.ensureTempDirectory();
   }
 
@@ -85,11 +86,20 @@ class VideoDownloadManager {
         '--age-limit', '100',  // Bypass age restrictions if possible
         '--add-header', 'Referer:https://www.youtube.com/',
         '--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        '--cookies-from-browser', 'chrome',  // Try to use Chrome's cookies
-        
-        '-o', outputPath,
-        url
+        '-o', outputPath
       ];
+
+      // Add cookies if file exists
+      try {
+        if (fs.existsSync(this.cookiesPath)) {
+          ytDlpArgs.push('--cookies', this.cookiesPath);
+        }
+      } catch (err) {
+        logger.warn('Cookies file check failed', { error: err });
+      }
+
+      // Add URL as last argument
+      ytDlpArgs.push(url);
 
       const ytDlp = spawn('yt-dlp', ytDlpArgs, { 
         stdio: ['ignore', 'pipe', 'pipe']
@@ -107,9 +117,13 @@ class VideoDownloadManager {
 
         // Check if file was actually created
         let fileExists = false;
+        let downloadedFiles = [];
         try {
-          await fs.access(outputPath);
-          fileExists = true;
+          downloadedFiles = await fs.readdir(this.tempDir);
+          downloadedFiles = downloadedFiles.filter(file => 
+            file.includes(path.basename(outputPath).split('.')[0])
+          );
+          fileExists = downloadedFiles.length > 0;
         } catch {}
 
         if (code !== 0 || !fileExists) {
@@ -121,7 +135,10 @@ class VideoDownloadManager {
           });
 
           try {
-            await fs.unlink(outputPath).catch(() => {});
+            // Clean up any potentially created files
+            for (const file of downloadedFiles) {
+              await fs.unlink(path.join(this.tempDir, file)).catch(() => {});
+            }
           } catch {}
 
           // More informative error message
@@ -130,8 +147,11 @@ class VideoDownloadManager {
           return;
         }
 
+        // Find the actual downloaded file
+        const actualOutputPath = path.join(this.tempDir, downloadedFiles[0]);
+
         resolve({
-          path: outputPath,
+          path: actualOutputPath,
           stdout,
           stderr
         });
