@@ -75,28 +75,21 @@ class VideoDownloadManager {
     const outputPath = this.generateTempFilePath();
 
     return new Promise((resolve, reject) => {
-      // Updated command to avoid shell-specific syntax
+      // Enhanced arguments to handle various scenarios
       const ytDlpArgs = [
-        '--no-playlist',  // Prevent downloading playlists
+        '--no-playlist',  
         '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        '--max-filesize', '1G',  // Increase max file size
-        '--abort-on-error',
-        '--ignore-errors',  // Continue even if some streams fail
-        '--add-header', 'Referer:https://www.youtube.com/',  // Add referrer
+        '--max-filesize', '1G',  
+        '--ignore-errors',  
+        '--no-warnings',  // Suppress warnings
+        '--age-limit', '100',  // Bypass age restrictions if possible
+        '--add-header', 'Referer:https://www.youtube.com/',
         '--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        '--cookies-from-browser', 'chrome',  // Try to use Chrome's cookies
+        
         '-o', outputPath,
         url
       ];
-
-      // Only add cookies if file exists
-      try {
-        const cookiesPath = path.join(__dirname, 'youtube-cookies.txt');
-        if (fs.existsSync(cookiesPath)) {
-          ytDlpArgs.push('--cookies', cookiesPath);
-        }
-      } catch (err) {
-        logger.warn('Cookies file not found', { error: err });
-      }
 
       const ytDlp = spawn('yt-dlp', ytDlpArgs, { 
         stdio: ['ignore', 'pipe', 'pipe']
@@ -131,7 +124,9 @@ class VideoDownloadManager {
             await fs.unlink(outputPath).catch(() => {});
           } catch {}
 
-          reject(new VideoDownloaderError(`Download failed: ${stderr || 'Unknown error'}`, 500));
+          // More informative error message
+          const errorMessage = stderr || stdout || 'Unknown download error';
+          reject(new VideoDownloaderError(`Download failed: ${errorMessage}`, 500));
           return;
         }
 
