@@ -44,7 +44,7 @@ app.post('/download-video', async (req, res) => {
     }
 
     // Download the video
-    const filePath = `tmp/video.mp4`;
+    let filePath = `tmp/video.mp4`;
     await new Promise((resolve, reject) => {
       exec(`curl -o ${filePath} "${videoUrl}"`, (error, stdout, stderr) => {
         if (error) reject(error);
