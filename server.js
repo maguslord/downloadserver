@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); // Important: parse JSON bodies
 
 // Rate limiting middleware
 const limiter = rateLimit({
@@ -33,64 +33,51 @@ function generateTempFileName(extension = '.mp4') {
 
 // Video download and decryption endpoint
 app.post('/download-video', async (req, res) => {
+  console.log('Received request body:', req.body); // Debug logging
+
   const { videoUrl } = req.body;
 
   if (!videoUrl) {
+    console.log('No video URL provided'); // Debug logging
     return res.status(400).json({ error: 'Video URL is required' });
   }
 
   try {
-    // Validate URL
-    const urlPattern = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
+    // More flexible URL validation
+    const urlPattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)/;
     if (!urlPattern.test(videoUrl)) {
+      console.log('Invalid URL format:', videoUrl); // Debug logging
       return res.status(400).json({ error: 'Invalid URL format' });
     }
 
-    // Download video
+    // Download video using youtube-dl or similar tool
     const tempInputFile = generateTempFileName();
     const tempOutputFile = generateTempFileName();
 
     try {
-      // Download video
-      const response = await axios({
-        method: 'get',
-        url: videoUrl,
-        responseType: 'stream'
-      });
-
-      // Save to temporary file
-      const writer = fs.createWriteStream(tempInputFile);
-      response.data.pipe(writer);
-
+      // Using youtube-dl for YouTube video download
       await new Promise((resolve, reject) => {
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-      });
-
-      // Decrypt/process video using FFmpeg (example decryption)
-      await new Promise((resolve, reject) => {
-        const ffmpeg = spawn('ffmpeg', [
-          '-i', tempInputFile,
-          '-c', 'copy',
-          tempOutputFile
+        const youtubeDl = spawn('youtube-dl', [
+          '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+          '-o', tempInputFile,
+          videoUrl
         ]);
 
-        ffmpeg.on('close', (code) => {
+        youtubeDl.on('close', (code) => {
           if (code === 0) resolve();
-          else reject(new Error(`FFmpeg process exited with code ${code}`));
+          else reject(new Error(`youtube-dl process exited with code ${code}`));
         });
 
-        ffmpeg.stderr.on('data', (data) => {
-          console.error(`FFmpeg stderr: ${data}`);
+        youtubeDl.stderr.on('data', (data) => {
+          console.error(`youtube-dl stderr: ${data}`);
         });
       });
 
       // Send file to client
-      res.download(tempOutputFile, 'downloaded_video.mp4', async (err) => {
+      res.download(tempInputFile, 'downloaded_video.mp4', async (err) => {
         // Cleanup temporary files
         try {
           await fs.unlink(tempInputFile);
-          await fs.unlink(tempOutputFile);
         } catch (cleanupErr) {
           console.error('Error cleaning up temp files:', cleanupErr);
         }
