@@ -12,13 +12,13 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Rate limiting middleware
 const limiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 10, // limit each IP to 10 requests per windowMs
+  windowMs: 1 * 60 * 1000,
+  max: 10,
   message: 'Too many requests, please try again later.'
 });
 app.use('/download-video', limiter);
@@ -34,48 +34,49 @@ function generateTempFileName(extension = '.mp4') {
 
 // Video download and decryption endpoint
 app.post('/download-video', async (req, res) => {
-  // Log the entire request body for debugging
   console.log('Received request body:', req.body);
 
   // Extract videoUrl from either JSON or form body
   const videoUrl = req.body.videoUrl || req.body.url;
 
   if (!videoUrl) {
-    console.log('No video URL provided');
     return res.status(400).json({ error: 'Video URL is required' });
   }
 
   try {
     // More flexible URL validation
-    const urlPattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/e\/|youtube\.com\/shorts\/)/;
+    const urlPattern = /^(https?:\/\/)?([\da-z\.-]+\.[a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
     if (!urlPattern.test(videoUrl)) {
-      return res.status(400).json({ error: 'Invalid YouTube URL format' });
+      return res.status(400).json({ error: 'Invalid URL format' });
     }
 
-    // Download video using youtube-dl or similar
     const tempInputFile = generateTempFileName();
     const tempOutputFile = generateTempFileName();
 
     try {
-      // Use child_process to run youtube-dl
+      // Use yt-dlp for universal video downloading
       await new Promise((resolve, reject) => {
-        const youtubeDl = spawn('youtube-dl', [
+        const ytDlp = spawn('yt-dlp', [
           '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
           '-o', tempInputFile,
           videoUrl
-        ]);
+        ], { 
+          shell: true,
+          stdio: 'pipe'
+        });
 
-        youtubeDl.on('close', (code) => {
+        ytDlp.on('close', (code) => {
           if (code === 0) resolve();
-          else reject(new Error(`youtube-dl process exited with code ${code}`));
+          else reject(new Error(`Video download failed with code ${code}`));
         });
 
-        youtubeDl.stdout.on('data', (data) => {
-          console.log(`youtube-dl stdout: ${data}`);
+        // Log output for debugging
+        ytDlp.stdout.on('data', (data) => {
+          console.log(`yt-dlp stdout: ${data}`);
         });
 
-        youtubeDl.stderr.on('data', (data) => {
-          console.error(`youtube-dl stderr: ${data}`);
+        ytDlp.stderr.on('data', (data) => {
+          console.error(`yt-dlp stderr: ${data}`);
         });
       });
 
