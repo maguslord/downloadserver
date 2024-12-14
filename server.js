@@ -92,6 +92,7 @@ class VideoDownloadManager {
         '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         '--max-filesize', '500M',  // Prevent extremely large downloads
         '--abort-on-error',
+        '--cookies', './cookies.txt',  // Use the cookies file in the same directory
         '-o', outputPath,
         url
       ], { 
