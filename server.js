@@ -12,7 +12,8 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json()); // Important: parse JSON bodies
+app.use(express.json()); // Parse JSON bodies
+app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
 // Rate limiting middleware
 const limiter = rateLimit({
@@ -33,29 +34,30 @@ function generateTempFileName(extension = '.mp4') {
 
 // Video download and decryption endpoint
 app.post('/download-video', async (req, res) => {
-  console.log('Received request body:', req.body); // Debug logging
+  // Log the entire request body for debugging
+  console.log('Received request body:', req.body);
 
-  const { videoUrl } = req.body;
+  // Extract videoUrl from either JSON or form body
+  const videoUrl = req.body.videoUrl || req.body.url;
 
   if (!videoUrl) {
-    console.log('No video URL provided'); // Debug logging
+    console.log('No video URL provided');
     return res.status(400).json({ error: 'Video URL is required' });
   }
 
   try {
     // More flexible URL validation
-    const urlPattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)/;
+    const urlPattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/e\/|youtube\.com\/shorts\/)/;
     if (!urlPattern.test(videoUrl)) {
-      console.log('Invalid URL format:', videoUrl); // Debug logging
-      return res.status(400).json({ error: 'Invalid URL format' });
+      return res.status(400).json({ error: 'Invalid YouTube URL format' });
     }
 
-    // Download video using youtube-dl or similar tool
+    // Download video using youtube-dl or similar
     const tempInputFile = generateTempFileName();
     const tempOutputFile = generateTempFileName();
 
     try {
-      // Using youtube-dl for YouTube video download
+      // Use child_process to run youtube-dl
       await new Promise((resolve, reject) => {
         const youtubeDl = spawn('youtube-dl', [
           '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
@@ -66,6 +68,10 @@ app.post('/download-video', async (req, res) => {
         youtubeDl.on('close', (code) => {
           if (code === 0) resolve();
           else reject(new Error(`youtube-dl process exited with code ${code}`));
+        });
+
+        youtubeDl.stdout.on('data', (data) => {
+          console.log(`youtube-dl stdout: ${data}`);
         });
 
         youtubeDl.stderr.on('data', (data) => {
