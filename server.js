@@ -1,120 +1,86 @@
 const express = require('express');
-const axios = require('axios');
-const fs = require('fs').promises;
-const path = require('path');
-const cors = require('cors');
+const bodyParser = require('body-parser');
+const multer = require('multer');
 const rateLimit = require('express-rate-limit');
-const { spawn } = require('child_process');
-const crypto = require('crypto');
+const fs = require('fs');
+const { exec } = require('child_process');
+require('dotenv').config();
 
 const app = express();
+const upload = multer({ dest: 'tmp/' });
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Rate limiting middleware
+// Rate limiter: 10 requests per minute per IP
 const limiter = rateLimit({
-  windowMs: 1 * 60 * 1000,
+  windowMs: 1 * 60 * 1000, // 1 minute
   max: 10,
   message: 'Too many requests, please try again later.'
 });
-app.use('/download-video', limiter);
 
-// Utility function to generate a unique temporary filename
-function generateTempFileName(extension = '.mp4') {
-  return path.join(
-    process.cwd(), 
-    'temp', 
-    `${crypto.randomBytes(16).toString('hex')}${extension}`
-  );
-}
+app.use(bodyParser.json());
+app.use(limiter);
 
-// Video download and decryption endpoint
+// POST /download-video
 app.post('/download-video', async (req, res) => {
-  console.log('Received request body:', req.body);
-
-  // Extract videoUrl from either JSON or form body
-  const videoUrl = req.body.videoUrl || req.body.url;
+  const { videoUrl } = req.body;
 
   if (!videoUrl) {
-    return res.status(400).json({ error: 'Video URL is required' });
+    return res.status(400).json({ error: 'Video URL is required.' });
   }
 
   try {
-    // More flexible URL validation
-    const urlPattern = /^(https?:\/\/)?([\da-z\.-]+\.[a-z\.]{2,6})([\/\w \.-]*)*\/?$/;
-    if (!urlPattern.test(videoUrl)) {
-      return res.status(400).json({ error: 'Invalid URL format' });
+    // Validate the URL
+    const isValidUrl = (url) => {
+      try {
+        new URL(url);
+        return true;
+      } catch (err) {
+        return false;
+      }
+    };
+
+    if (!isValidUrl(videoUrl)) {
+      return res.status(400).json({ error: 'Invalid URL.' });
     }
 
-    const tempInputFile = generateTempFileName();
-    const tempOutputFile = generateTempFileName();
+    // Download the video
+    const filePath = `tmp/video.mp4`;
+    await new Promise((resolve, reject) => {
+      exec(`curl -o ${filePath} "${videoUrl}"`, (error, stdout, stderr) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
 
-    try {
-      // Use yt-dlp for universal video downloading
+    // Decrypt the video if encrypted
+    const decryptionKey = process.env.DECRYPTION_KEY;
+    if (decryptionKey) {
+      const decryptedPath = `tmp/decrypted_video.mp4`;
       await new Promise((resolve, reject) => {
-        const ytDlp = spawn('yt-dlp', [
-          '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-          '-o', tempInputFile,
-          videoUrl
-        ], { 
-          shell: true,
-          stdio: 'pipe'
-        });
-
-        ytDlp.on('close', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error(`Video download failed with code ${code}`));
-        });
-
-        // Log output for debugging
-        ytDlp.stdout.on('data', (data) => {
-          console.log(`yt-dlp stdout: ${data}`);
-        });
-
-        ytDlp.stderr.on('data', (data) => {
-          console.error(`yt-dlp stderr: ${data}`);
+        exec(`ffmpeg -i ${filePath} -decryption_key ${decryptionKey} -c copy ${decryptedPath}`, (error, stdout, stderr) => {
+          if (error) reject(error);
+          else resolve();
         });
       });
 
-      // Send file to client
-      res.download(tempInputFile, 'downloaded_video.mp4', async (err) => {
-        // Cleanup temporary files
-        try {
-          await fs.unlink(tempInputFile);
-        } catch (cleanupErr) {
-          console.error('Error cleaning up temp files:', cleanupErr);
-        }
-
-        if (err) {
-          console.error('Download error:', err);
-        }
-      });
-
-    } catch (downloadError) {
-      console.error('Download failed:', downloadError);
-      res.status(500).json({ 
-        error: 'Failed to download video', 
-        details: downloadError.message 
-      });
+      fs.unlinkSync(filePath); // Remove encrypted file
+      filePath = decryptedPath;
     }
 
-  } catch (error) {
-    console.error('Server error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    // Stream the video back to the client
+    res.download(filePath, 'video.mp4', (err) => {
+      if (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to send the file.' });
+      }
+      fs.unlinkSync(filePath); // Clean up temporary files
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error occurred.' });
   }
 });
 
-// Start server
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
-
-// Ensure temp directory exists
-const tempDir = path.join(process.cwd(), 'temp');
-fs.mkdir(tempDir, { recursive: true }).catch(console.error);
-
-module.exports = app;
