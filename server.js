@@ -75,8 +75,8 @@ class VideoDownloadManager {
     const outputPath = this.generateTempFilePath();
 
     return new Promise((resolve, reject) => {
-      // Updated yt-dlp command with more comprehensive options
-      const ytDlp = spawn('yt-dlp', [
+      // Updated command to avoid shell-specific syntax
+      const ytDlpArgs = [
         '--no-playlist',  // Prevent downloading playlists
         '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         '--max-filesize', '1G',  // Increase max file size
@@ -84,11 +84,21 @@ class VideoDownloadManager {
         '--ignore-errors',  // Continue even if some streams fail
         '--add-header', 'Referer:https://www.youtube.com/',  // Add referrer
         '--add-header', 'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        '--cookies', './youtube-cookies.txt',  // Use YouTube-specific cookies
         '-o', outputPath,
         url
-      ], { 
-        shell: true,
+      ];
+
+      // Only add cookies if file exists
+      try {
+        const cookiesPath = path.join(__dirname, 'youtube-cookies.txt');
+        if (fs.existsSync(cookiesPath)) {
+          ytDlpArgs.push('--cookies', cookiesPath);
+        }
+      } catch (err) {
+        logger.warn('Cookies file not found', { error: err });
+      }
+
+      const ytDlp = spawn('yt-dlp', ytDlpArgs, { 
         stdio: ['ignore', 'pipe', 'pipe']
       });
 
@@ -113,14 +123,15 @@ class VideoDownloadManager {
           logger.error('Video download failed', { 
             url, 
             exitCode: code, 
-            stderr 
+            stderr,
+            stdoutChunks: stdout
           });
 
           try {
             await fs.unlink(outputPath).catch(() => {});
           } catch {}
 
-          reject(new VideoDownloaderError(`Download failed: ${stderr}`, 500));
+          reject(new VideoDownloaderError(`Download failed: ${stderr || 'Unknown error'}`, 500));
           return;
         }
 
@@ -133,7 +144,7 @@ class VideoDownloadManager {
 
       ytDlp.on('error', (err) => {
         logger.error('Spawn error', { error: err });
-        reject(new VideoDownloaderError('Failed to spawn download process', 500));
+        reject(new VideoDownloaderError(`Failed to spawn download process: ${err.message}`, 500));
       });
     });
   }
