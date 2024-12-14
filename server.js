@@ -64,7 +64,8 @@ class VideoDownloadManager {
 
   async validateUrl(url) {
     // Comprehensive URL validation
-    const urlRegex = /^(https?:\/\/)?([\w-]+\.)+[a-zA-Z]{2,6}(\/[\w\-\.~!$&'()*+,;=:@%]*)*$/;
+    const urlRegex = /^(https?:\/\/)?([a-zA-Z0-9.-]+)(:[0-9]+)?(\/[a-zA-Z0-9\-_.~!$&'()*+,;=:@%]*)*(\?[a-zA-Z0-9\-_.~!$&'()*+,;=:@%]*)?(\#[a-zA-Z0-9\-_.~!$&'()*+,;=:@%]*)?$/;
+
 
     if (!urlRegex.test(url)) {
       throw new VideoDownloaderError('Invalid URL format', 400);
