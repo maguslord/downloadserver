@@ -39,5 +39,5 @@ def main():
     receive_thread.start()
     send_thread.start()
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     main()
