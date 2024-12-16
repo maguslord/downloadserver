@@ -1,81 +1,132 @@
 import socket
 import threading
+import logging
+from typing import Dict, List
 
-# Server configuration
-HOST = '4.240.59.10'  # Listen on all interfaces (public and private)
-PORT = 5000  # Port for the server
+# Configure logging
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
-clients = []  # List to store connected client sockets
-aliases = {}  # Dictionary to store client aliases
+class ChatServer:
+    def __init__(self, host: str = '', port: int = 5000):
+        """
+        Initialize the chat server.
+        
+        :param host: IP to bind the server (default all interfaces)
+        :param port: Port number to listen on
+        """
+        self.host = host
+        self.port = port
+        self.server_socket = None
+        self.clients: Dict[socket.socket, str] = {}  # socket to alias mapping
+        self.lock = threading.Lock()  # Thread-safe lock for client operations
 
+    def start(self):
+        """
+        Start the chat server.
+        """
+        try:
+            # Create server socket
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.server_socket.bind((self.host, self.port))
+            self.server_socket.listen(100)  # Allow up to 100 pending connections
+            
+            logging.info(f"Server started on {self.host}:{self.port}")
+            
+            # Accept connections
+            while True:
+                client_socket, address = self.server_socket.accept()
+                logging.info(f"New connection from {address}")
+                
+                # Handle each client in a separate thread
+                client_thread = threading.Thread(
+                    target=self.handle_client, 
+                    args=(client_socket, address)
+                )
+                client_thread.daemon = True
+                client_thread.start()
+        
+        except Exception as e:
+            logging.error(f"Server error: {e}")
+        finally:
+            if self.server_socket:
+                self.server_socket.close()
 
-def broadcast(message, sender=None):
+    def handle_client(self, client_socket: socket.socket, address: tuple):
+        """
+        Handle individual client communication.
+        
+        :param client_socket: Socket of the connected client
+        :param address: Client's network address
+        """
+        try:
+            # Request and validate alias
+            client_socket.send("Enter your alias: ".encode('utf-8'))
+            alias = client_socket.recv(1024).decode('utf-8').strip()
+            
+            if not alias or len(alias) > 20:
+                client_socket.send("Invalid alias. Must be 1-20 characters.".encode('utf-8'))
+                client_socket.close()
+                return
+
+            # Thread-safe client registration
+            with self.lock:
+                self.clients[client_socket] = alias
+            
+            # Broadcast join message
+            self.broadcast(f"{alias} has joined the chat!", sender=client_socket)
+            logging.info(f"{alias} ({address}) joined")
+
+            # Receive and broadcast messages
+            while True:
+                message = client_socket.recv(1024)
+                if not message:
+                    break
+                
+                decoded_message = message.decode('utf-8')
+                full_message = f"{alias}: {decoded_message}"
+                logging.info(full_message)
+                self.broadcast(full_message, sender=client_socket)
+
+        except ConnectionResetError:
+            logging.warning(f"Connection reset by {alias}")
+        except Exception as e:
+            logging.error(f"Client handling error: {e}")
+        finally:
+            # Cleanup
+            with self.lock:
+                if client_socket in self.clients:
+                    alias = self.clients.pop(client_socket)
+                    self.broadcast(f"{alias} has left the chat.", sender=client_socket)
+                    logging.info(f"{alias} left the chat")
+                client_socket.close()
+
+    def broadcast(self, message: str, sender: socket.socket = None):
+        """
+        Send a message to all connected clients except the sender.
+        
+        :param message: Message to broadcast
+        :param sender: Client socket to exclude from broadcast
+        """
+        with self.lock:
+            for client in list(self.clients.keys()):
+                if client != sender:
+                    try:
+                        client.send(message.encode('utf-8'))
+                    except Exception as e:
+                        logging.error(f"Broadcast error: {e}")
+                        # Remove problematic client
+                        if client in self.clients:
+                            del self.clients[client]
+                        client.close()
+
+def main():
     """
-    Send a message to all connected clients except the sender.
+    Main function to run the chat server.
     """
-    for client in clients:
-        if client != sender:
-            try:
-                client.send(message)
-            except:
-                # Remove client if it fails to send
-                clients.remove(client)
+    server = ChatServer(host='0.0.0.0', port=5000)
+    server.start()
 
-
-def handle_client(client, address):
-    """
-    Handle communication with a connected client.
-    """
-    try:
-        # Ask for alias
-        client.send("Enter your alias:".encode('utf-8'))
-        alias = client.recv(1024).decode('utf-8')
-        aliases[client] = alias
-
-        # Notify others about the new connection
-        print(f"{alias} ({address}) has joined the chat.")
-        broadcast(f"{alias} has joined the chat!".encode('utf-8'), sender=client)
-        client.send("You are now connected to the chat!".encode('utf-8'))
-
-        # Handle messages from this client
-        while True:
-            message = client.recv(1024)
-            if not message:
-                break  # Client disconnected
-            full_message = f"{alias}: {message.decode('utf-8')}"
-            print(full_message)  # Print to server console
-            broadcast(full_message.encode('utf-8'), sender=client)
-
-    except ConnectionResetError:
-        print(f"Connection lost with {aliases.get(client, 'Unknown')} ({address}).")
-
-    finally:
-        # Clean up on disconnect
-        alias = aliases.pop(client, "Unknown")
-        clients.remove(client)
-        client.close()
-        broadcast(f"{alias} has left the chat.".encode('utf-8'))
-        print(f"{alias} ({address}) has left the chat.")
-
-
-def accept_clients():
-    """
-    Accept and handle incoming client connections.
-    """
-    while True:
-        client, address = server.accept()
-        print(f"New connection from {address}")
-        clients.append(client)
-
-        # Start a thread to handle the client
-        thread = threading.Thread(target=handle_client, args=(client, address))
-        thread.start()
-
-
-# Set up the server
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.bind((HOST, PORT))
-server.listen()
-
-print(f"Server is running on port {PORT}")
-accept_clients()
+if __name__ == "__main__":
+    main()
