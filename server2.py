@@ -2,7 +2,7 @@ import socket
 import threading
 
 # Server configuration
-HOST = ''  # Listen on all interfaces (public and private)
+HOST = '4.240.59.10'  # Listen on all interfaces (public and private)
 PORT = 5000  # Port for the server
 
 clients = []  # List to store connected client sockets
