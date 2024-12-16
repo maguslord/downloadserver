@@ -1,66 +1,40 @@
-import socket
-import threading
+from flask import Flask, request, jsonify
+from threading import Thread
 
-# Server details
-HOST = '0.0.0.0'  # Localhost or replace with server's IP
-PORT = 5000        # Choose an unused port
+app = Flask(__name__)
 
-# List to store connected clients
+# Store connected clients and messages
 clients = []
-aliases = []
+messages = []
 
-# Function to broadcast messages to all clients
-def broadcast(message, sender_socket=None):
-    for client in clients:
-        if client != sender_socket:  # Don't send the message to the sender
-            try:
-                client.send(message)
-            except:
-                # Remove client if sending fails
-                clients.remove(client)
+@app.route('/register', methods=['POST'])
+def register_client():
+    """Register a new client by adding their alias."""
+    alias = request.json.get("alias")
+    if alias not in clients:
+        clients.append(alias)
+        messages.append(f"{alias} has joined the chat.")
+        return jsonify({"message": "You have joined the chat.", "messages": messages}), 200
+    return jsonify({"error": "Alias already exists."}), 400
 
-# Handle communication with a client
-def handle_client(client):
-    while True:
-        try:
-            # Receive message from the client
-            message = client.recv(1024)
-            broadcast(message, sender_socket=client)
-        except:
-            # If the client disconnects, remove it
-            index = clients.index(client)
-            clients.remove(client)
-            alias = aliases[index]
-            aliases.remove(alias)
-            broadcast(f"{alias} has left the chat.".encode('utf-8'))
-            client.close()
-            break
+@app.route('/send', methods=['POST'])
+def send_message():
+    """Receive a message from a client and broadcast it."""
+    alias = request.json.get("alias")
+    message = request.json.get("message")
+    if alias in clients:
+        messages.append(f"{alias}: {message}")
+        return jsonify({"message": "Message broadcasted."}), 200
+    return jsonify({"error": "Alias not registered."}), 400
 
-# Main server function
-def main():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((HOST, PORT))
-    server.listen()
+@app.route('/messages', methods=['GET'])
+def get_messages():
+    """Return all chat messages."""
+    return jsonify(messages), 200
 
-    print(f"Server running on {HOST}:{PORT}")
-
-    while True:
-        client, address = server.accept()
-        print(f"Connected with {str(address)}")
-
-        # Ask for and store the client's alias
-        client.send("Enter your alias: ".encode('utf-8'))
-        alias = client.recv(1024).decode('utf-8')
-        aliases.append(alias)
-        clients.append(client)
-
-        print(f"Alias of the client is {alias}")
-        broadcast(f"{alias} has joined the chat!".encode('utf-8'))
-        client.send("You are now connected to the chat.".encode('utf-8'))
-
-        # Start a thread for the client
-        thread = threading.Thread(target=handle_client, args=(client,))
-        thread.start()
+def run_server():
+    app.run(host='0.0.0.0', port=5000)
 
 if __name__ == "__main__":
-    main()
+    server_thread = Thread(target=run_server)
+    server_thread.start()

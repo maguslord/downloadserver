@@ -1,43 +1,58 @@
-import socket
+import requests
 import threading
+import time
 
 # Server details
-HOST = '4.240.59.10'  # Replace with server's IP if needed
-PORT = 5000       # Same port as the server
+SERVER_URL = "http://<VM_PUBLIC_IP>:5000"  # Replace with Azure VM's public IP
 
-# Function to receive messages from the server
-def receive_messages(client):
+# Client alias
+alias = None
+
+def register():
+    """Register the client with the server and fetch previous messages."""
+    global alias
+    alias = input("Enter your alias: ")
+    response = requests.post(f"{SERVER_URL}/register", json={"alias": alias})
+    if response.status_code == 200:
+        data = response.json()
+        print(data.get("message"))
+        # Display all previous messages
+        print("Previous messages:")
+        for msg in data.get("messages", []):
+            print(msg)
+    else:
+        print(response.json().get("error"))
+        register()
+
+def send_message():
+    """Send a message to the server."""
+    while True:
+        message = input()
+        response = requests.post(f"{SERVER_URL}/send", json={"alias": alias, "message": message})
+        if response.status_code != 200:
+            print(response.json().get("error"))
+
+def receive_messages():
+    """Continuously fetch and display new messages from the server."""
+    seen_messages = 0
     while True:
         try:
-            # Continuously listen for messages from the server
-            message = client.recv(1024).decode('utf-8')
-            print(message)
-        except:
-            print("An error occurred. Disconnecting...")
-            client.close()
-            break
-
-# Function to send messages to the server
-def send_messages(client):
-    while True:
-        try:
-            # Read user input and send it to the server
-            message = input()
-            client.send(message.encode('utf-8'))
-        except:
-            print("An error occurred while sending the message.")
-            client.close()
+            response = requests.get(f"{SERVER_URL}/messages")
+            if response.status_code == 200:
+                all_messages = response.json()
+                # Display only new messages
+                for msg in all_messages[seen_messages:]:
+                    print(msg)
+                seen_messages = len(all_messages)
+            time.sleep(1)
+        except Exception as e:
+            print(f"Error fetching messages: {e}")
             break
 
 def main():
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect((HOST, PORT))
-
-    # Start threads for sending and receiving messages
-    receive_thread = threading.Thread(target=receive_messages, args=(client,))
-    send_thread = threading.Thread(target=send_messages, args=(client,))
-    receive_thread.start()
-    send_thread.start()
+    register()
+    threading.Thread(target=receive_messages, daemon=True).start()
+    send_message()
 
 if __name__ == "__main__":
     main()
