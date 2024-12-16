@@ -2,7 +2,7 @@ import socket
 import threading
 
 class ChatServer:
-    def _init_(self, host='0.0.0.0', port=55555):
+    def _init_(self, host='0.0.0.0', port=3000):
         # Use 0.0.0.0 to allow external connections
         self.host = host
         self.port = port
