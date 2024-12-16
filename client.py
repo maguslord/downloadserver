@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import simpledialog, messagebox, scrolledtext
 
 class ChatClient:
-    def _init_(self):
+    def __init__(self):
         # Create main window
         self.window = tk.Tk()
         self.window.title("Chat Application")

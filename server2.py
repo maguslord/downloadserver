@@ -2,10 +2,11 @@ import socket
 import threading
 
 class ChatServer:
-    def __init__(self, host='0.0.0.0', port=3000):
+    def __init__(self, host='0.0.0.0', port=3000, timeout=300):
         # Use 0.0.0.0 to allow external connections
         self.host = host
         self.port = port
+        self.timeout = timeout  # Set timeout in seconds
         
         # Create server socket
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -40,6 +41,9 @@ class ChatServer:
         
         :param client: Connected client socket
         """
+        # Set a timeout for inactivity
+        client.settimeout(self.timeout)
+        
         while True:
             try:
                 # Receive message from client
@@ -47,16 +51,13 @@ class ChatServer:
                 
                 # Broadcast message to all other clients
                 self.broadcast(message, client)
-            except:
-                # Find and remove the disconnected client
-                index = self.clients.index(client)
-                nickname = self.nicknames[index]
-                
-                # Broadcast that user left
-                leave_message = f"{nickname} left the chat!".encode('ascii')
-                self.broadcast(leave_message)
-                
-                # Remove client from lists
+            except socket.timeout:
+                print("Client timed out due to inactivity.")
+                self.remove_client(client)
+                break
+            except Exception as e:
+                # Handle other exceptions (e.g., client disconnected)
+                print(f"Error handling client: {e}")
                 self.remove_client(client)
                 break
 
@@ -68,11 +69,16 @@ class ChatServer:
         """
         if client in self.clients:
             index = self.clients.index(client)
+            nickname = self.nicknames[index]
             self.clients.remove(client)
             client.close()
             
             # Remove corresponding nickname
             del self.nicknames[index]
+            
+            # Notify others about the disconnection
+            leave_message = f"{nickname} left the chat!".encode('ascii')
+            self.broadcast(leave_message)
 
     def accept_connections(self):
         """
@@ -118,8 +124,8 @@ class ChatServer:
         accept_thread.start()
 
 def main():
-    # Create and start the server
-    server = ChatServer()
+    # Create and start the server with a 5-minute timeout for inactivity
+    server = ChatServer(timeout=300)
     server.start()
 
 if __name__== "__main__":
