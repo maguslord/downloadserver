@@ -2,8 +2,8 @@ import socket
 import threading
 
 # Server configuration
-HOST = '127.0.0.1'  # Localhost
-PORT = 12345        # Port for the server
+HOST = '4.240.59.10'  # Localhost
+PORT = 5000        # Port for the server
 
 clients = []  # List to store connected client sockets
 aliases = {}  # Dictionary to store client aliases
